@@ -1,0 +1,86 @@
+fn APPLY_SPLIT_ON_PREVIOUS_SHARES
+(
+    curr_share_transaction_date,
+    stock_split_dates,
+    split_ratios,
+    split_count,
+    running_share_count__split_ptr
+)
+=LET(
+    runningShareCount,
+        INDEX(running_share_count__split_ptr, 1),
+    splitPtr,
+        INDEX(running_share_count__split_ptr, 2),
+
+    IF(splitPtr <= split_count,
+        IF(curr_share_transaction_date >= INDEX(stock_split_dates, splitPtr),
+            APPLY_SPLIT_ON_PREVIOUS_SHARES(
+                curr_share_transaction_date,
+                stock_split_dates,
+                split_ratios,
+                split_count,
+                {
+                    runningShareCount * INDEX(split_ratios, splitPtr);
+                    splitPtr + 1
+                }
+            ),
+            running_share_count__split_ptr
+        ),
+        running_share_count__split_ptr
+    )
+)
+
+EOF
+
+
+fn GET_SHARE_COUNT
+(
+    share_transaction_dates,
+    shares_transacted,
+    stock_split_dates,
+    split_ratios,
+    transaction_count,
+    split_count
+)
+
+Note: share_transaction_dates and stock_split_dates will be sorted, as the
+sheet rejects input if data is not input in a way that is sorted in ascending
+fashion
+
+IF(OR(split_count = 0, transaction_count = 0),
+    SUM(shares_transacted),
+    LET(
+        shareCount_splitPtr,
+            REDUCE({0; 1}, SEQUENCE(transaction_count),
+                LAMBDA(running_shareCount_splitPtr, i,
+                    LET(
+                        output_shareCount_splitPtr,
+                            APPLY_SPLIT_ON_PREVIOUS_SHARES(
+                                INDEX(share_transaction_dates, i),
+                                stock_split_dates,
+                                split_ratios,
+                                split_count,
+                                running_shareCount_splitPtr
+                            ),
+                        {
+                            INDEX(output_shareCount_splitPtr, 1) + INDEX(shares_transacted, i);
+                            INDEX(output_shareCount_splitPtr, 2)
+                        }
+                    )
+                )
+            ),
+        LET(
+            shareCount,
+                INDEX(shareCount_splitPtr, 1),
+            splitPtr,
+                INDEX(shareCount_splitPtr, 2),
+            IF(splitPtr > split_count,
+                shareCount,
+                REDUCE(shareCount, SEQUENCE(split_count - splitPtr + 1, 1, splitPtr, 1),
+                    LAMBDA(result, i, result * INDEX(split_ratios, i))
+                )
+            )
+        )
+    )
+)
+EOF

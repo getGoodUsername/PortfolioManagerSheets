@@ -1,0 +1,61 @@
+https://www.reddit.com/r/personalfinance/wiki/tools/#wiki_sharing_spreadsheets
+
+
+Investing Spreadsheet Tool for Simple, NO SELL Rebalancing and Effortless Allocation of New Money to Investments
+Spreadsheet tool generator:
+
+https://script.google.com/macros/s/AKfycbzpVWo7suTYjkPI-EzpyXxdT-0tbDAUAoYeroW2WApqpeHyIvG3-OlEqgME3M-WyRiv/exec
+
+If you want to use the spread sheet ASAP read this:
+
+Go to the site above and input the assets you wish to track
+
+Make a copy of the spreadsheet
+
+Make sure to fill out the
+
+target buy/sell in cell "I3"
+
+start date of weight path in cell "M1"
+
+end date of weight path in cell "M2"
+
+and start/final weights in columns "L" and "M"
+
+Each asset has it's own sheet within the spreadsheet, there you will log any buys or sells.
+
+Single Op Transaction in column "F" will instruct you how to do a "buy only rebalance"
+
+If confused make sure to read the cell notes scattered around the spread sheet (just hover over with your mouse)
+
+If still confused take a look at the sample sheet: https://docs.google.com/spreadsheets/d/1l4_kiV7wzw65ymgDFhWuI5AXoq7QC0x9t37mr3lKi1U/edit?usp=sharing
+
+The Two Key Features Are:
+
+Easy allocation of new money to investments with the "Single Op Transaction" column in the main sheet.
+
+A way to change dynamically target weights as time passes by. Made to plan in a target reduction of risk as your risk capacity decreases.
+
+If you want to know how the BUY only rebalance (Single Op Transaction) algorithm works continue reading.
+
+Although the spreadsheet allows you to do ONLY BUY rebalances and ONLY SELL rebalances, I'll explain the core algorithm as if we are only buying.
+
+The general algorithm is pretty straight forward; just figure out which asset is the most underweight and buy those assets. Where it gets a little bit more nuanced is deciding what we define as the most underweight and how we go about deciding when an asset is no longer the most underweight and subsequently choose another asset to invest the rest of the money to.
+
+After much deliberation, the way I decided to figure out what the most underweight asset is to treat the plain old traditional rebalance output as the guiding compass to the algorithm. Just as a quick review, to rebalance is to change an asset's current value to their "target" or "ideal" value, which is defined as the asset's target weight multiplied by the total portfolio value. ideal = target_weight * total_portfolio_value. From there you subtract ideal by the asset's current value and bam, rebalance = ideal - current_asset_value.
+
+If the ideal value is greater than the current asset value, that means that the asset is underweight and the output of the "rebalance" function would recommend you "add" money to that asset. If the ideal value is smaller than the current asset value that means that the asset is overweight and the output of the "rebalance" function would state to "subtract" money from that asset. To determine the most underweight asset, all my algorithm does is to find the asset whose ideal - current_asset_value is the greatest.
+
+Now we know how to decide what asset to add money to but the next question is how much do we add to this specific asset? This problem is solved by spending our "total portfolio buy" in chunks, bit by bit. If we have $1000 to contribute to the folder, we'll only change any asset values 10 dollars at a time.
+
+Now with those two ideas we can combine it to create a high level implementation of the algorithm.
+
+chunk = total buy / number of iterations
+while (current iteration < number of iterations)
+    most under weight asset = asset with max value from "rebalance" operation
+    most under weight asset value = most under weight asset value + chunk
+    current iteration = current iteration + 1
+result = new asset values - starting asset values
+The biggest idea though is that throughout this whole process we never sell assets, which as we all know, is often a costly venture that we would like to avoid. And although there a several more optimization made in the actual implementation, I believe this would give you a good high level understanding of what is going on.
+
+Going a little deeper as to why I choose to use the traditional rebalance function as the core to this new algorithm, I believe that using this to decide which asset is the most over/under weight is more fair as when it actually comes to rebalancing we are changing asset values; choosing to compare current weights to target weights to decide which asset is the most over/under weight leads to a detached line of thought as we don't change weights when we re balance we change values. Another nice feature of this algorithm is that as the number of iteration is set higher, the closer the algorithm gets to the output of the traditional rebalance. This is especially visible when the target portfolio buy is such that the traditional rebalance also only outputs "buy" recommendations.

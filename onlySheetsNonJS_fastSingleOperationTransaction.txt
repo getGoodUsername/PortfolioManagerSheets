@@ -1,0 +1,963 @@
+fn CHANGE_IN_TOTAL_PORTFOLIO_VALUE_NEEDED_FOR_CURRENT_ASSET_VALUES_TO_BE_TARGET_WEIGHTS
+(
+    target_weights,
+    asset_values,
+    total_portfolio_value
+)
+
+Notes:
+av = (tpv + x) * tw
+x = (av / tw) - tpv
+as "tw" approaches 0 (from positive to zero), x approaches infinity (assuming that "av" > 0)
+
+=MAP(asset_values, target_weights,
+    LAMBDA(value, weight,
+        IF(weight = 0,
+            IF (value = 0,
+                0,
+                1.79769313486231E+308
+            ),
+            (value / weight) - total_portfolio_value
+        )
+    )
+)
+EOF
+
+
+
+
+
+
+
+
+fn GET_ITER_COUNT_BASED_ON_PRECISION
+(
+    precision
+)
+
+Note:
+precision is expected to be less than 100% (aka 1)
+
+Calculation Note:
+if iter_count is defined by a value:
+percent_change_step = 1 / iter_count
+precision = 1 - percent_change_step
+precision = 1 - (1 / iter_count)
+
+if precision is defined it therefore follows:
+1 / iter_count = 1 - precision
+iter_count = 1 / (1 - precision)
+
+=CEILING(1 / (1 - precision))
+
+EOF
+
+
+
+
+
+
+
+
+fn GET_PRECISION_BASED_ON_ITER_COUNT
+(
+    iter_count
+)
+
+Note: Calculation is as follows
+1 / (1 - precision) = iter_count
+1 = iter_count - precision * iter_count
+precision * iter_count = iter_count - 1
+precision = (iter_count - 1) / iter_count
+
+=(iter_count - 1) / iter_count
+
+EOF
+
+
+
+
+
+
+
+
+fn GET_CHANGE_PACKET
+(
+    target_buy_sell,
+    precision
+)
+
+=target_buy_sell / GET_ITER_COUNT_BASED_ON_PRECISION(precision)
+
+EOF
+
+
+
+
+
+
+
+
+
+fn GET_INIT_VALUE_CHANGE_DERIVED_FROM_TARGET_ASSET_VALUE_CHANGE_FOR_ITS_REBALANCE_VALUE_TO_BE_EQUAL_TO_ANOTHER_ASSETS_REBALANCE_VALUE
+(
+    index_numbers,
+    target_weights,
+    start_asset_values,
+    total_portfolio_value,
+    target_buy_sell,
+    target_asset_index,
+)
+
+Notes:
+index_numbers is equal to SEQUENCE(COUNTA(target_weights))
+target_asset_index is either the index of the most underweight or most overweight asset
+
+Calculation Notes:
+rebalance(tpv, tw, av) = tpv * tw - av;
+rebalance(tpv + x, tw0, av0 + x) = rebalance(tpv + x, tw1, av1)  // where x is the change in av0 so values are equal. (if av0 is most underweight x will always be > 0, if av0 is most overweight x will always be < 0)
+(tpv + x) * tw0 - (av0 + x) = (tpv + x) * tw1 - av1
+tpv*tw0 + x*tw0 - av0 - x = tpv*tw1 + x*tw1 - av1
+x*(tw0 - tw1 - 1) + tpv*tw0 - av0 = tpv*tw1 - av1
+x*(tw0 - tw1 - 1) = tpv*(tw1 - tw0) + av0 - av1
+x = (tpv*(tw1 - tw0) + av0 - av1) / (tw0 - tw1 - 1)
+
+=LET(
+    targetWeight0,
+        INDEX(target_weights, target_asset_index),
+    assetValue0,
+        INDEX(start_asset_values, target_asset_index),
+    ignoreSelfValue,
+        IF(target_buy_sell < 0, -1.79769313486231E+308, 1.79769313486231E+308),
+    assetValueChangesForEqRebalanceVal,
+        MAP(target_weights, start_asset_values, index_numbers,
+            LAMBDA(targetWeight1, assetValue1, i,
+                IF(i = target_asset_index,
+                    ignoreSelfValue,
+                    (total_portfolio_value * (targetWeight1 - targetWeight0) + assetValue0 - assetValue1) / (targetWeight0 - targetWeight1 - 1)
+                )
+            )
+        ),
+    IF(target_buy_sell < 0,
+        MAX(assetValueChangesForEqRebalanceVal, target_buy_sell),
+        MIN(assetValueChangesForEqRebalanceVal, target_buy_sell)
+    )
+)
+EOF
+
+
+
+
+
+
+
+fn GET_MOST_UNDERWEIGHT_INDEX
+(
+    index_numbers,
+    target_weights,
+    curr_asset_values,
+    curr_portfolio_values
+)
+
+Notes:
+index_numbers is equal to SEQUENCE(COUNTA(target_weights))
+
+=LET(
+    currRebalance,
+        REBALANCE(target_weights, curr_asset_values, curr_portfolio_values),
+    REDUCE(1, index_numbers,
+        LAMBDA(underWeightIndex, i,
+            IF(INDEX(currRebalance, i) > INDEX(currRebalance, underWeightIndex),
+                i,
+                underWeightIndex
+            )
+        )
+    )
+)
+EOF
+
+
+
+
+
+
+
+
+
+
+
+
+fn GET_MOST_OVERWEIGHT_INDEX
+(
+    index_numbers,
+    target_weights,
+    curr_asset_values,
+    curr_portfolio_values
+)
+
+Notes:
+index_numbers is equal to SEQUENCE(COUNTA(target_weights))
+
+=LET(
+    currRebalance,
+        REBALANCE(target_weights, curr_asset_values, curr_portfolio_values),
+    REDUCE(1, index_numbers,
+        LAMBDA(overWeightIndex, i,
+            IF(INDEX(currRebalance, i) < INDEX(currRebalance, overWeightIndex),
+                i,
+                overWeightIndex
+            )
+        )
+    )
+)
+EOF
+
+
+
+
+
+
+
+
+
+
+
+fn NEXT_ASSET_VALUES
+(
+    index_numbers,
+    curr_asset_values,
+    change_index,
+    change_value
+)
+
+Notes:
+index_numbers is equal to SEQUENCE(COUNTA(curr_asset_values))
+
+=MAP(curr_asset_values, index_numbers,
+    LAMBDA(val, i,
+        IF(i = change_index,
+            val + change_value,
+            val
+        )
+    )
+)
+EOF
+
+
+
+
+
+
+
+
+
+
+
+fn NON_ERROR_CHECKING_SINGLE_OPERATION_TRANSACTION
+(
+    index_numbers,
+    curr_asset_values,
+    total_portfolio_value,
+    target_buy_sell,
+    change_packet,
+    init_change,
+    asset_selector
+)
+
+Notes:
+index_numbers is equal to SEQUENCE(COUNTA(curr_asset_values))
+
+=LET(
+    iterCount,
+        FLOOR((target_buy_sell - init_change) / change_packet),
+    getCurrPortfolioValue,
+        LAMBDA(i, total_portfolio_value + init_change + (change_packet * i)),
+    finalAssetValues,
+        IF(iterCount > 0,
+            REDUCE(curr_asset_values, SEQUENCE(iterCount, 1, 0, 1),
+                LAMBDA(runningAssetValues, i,
+                    NEXT_ASSET_VALUES(
+                        index_numbers,
+                        runningAssetValues,
+                        asset_selector(runningAssetValues, getCurrPortfolioValue(i)),
+                        change_packet
+                    )
+                )
+            ),
+            curr_asset_values
+        ),
+    NEXT_ASSET_VALUES(
+        index_numbers,
+        finalAssetValues,
+        asset_selector(finalAssetValues, getCurrPortfolioValue(iterCount)),
+        total_portfolio_value + target_buy_sell - getCurrPortfolioValue(iterCount)
+    )
+)
+EOF
+
+
+
+
+
+
+
+
+
+
+
+
+
+fn START_NON_ERROR_CHECKING_SINGLE_OPERATION_TRANSACTION
+(
+    index_numbers,
+    target_weights,
+    start_asset_values,
+    total_portfolio_value,
+    target_buy_sell,
+    precision,
+    asset_selector
+)
+
+Notes:
+index_numbers is equal to SEQUENCE(COUNTA(target_weights))
+
+=LET(
+    initTargetAssetIndex,
+        asset_selector(start_asset_values, total_portfolio_value),
+    initChange,
+        GET_INIT_VALUE_CHANGE_DERIVED_FROM_TARGET_ASSET_VALUE_CHANGE_FOR_ITS_REBALANCE_VALUE_TO_BE_EQUAL_TO_ANOTHER_ASSETS_REBALANCE_VALUE(
+            index_numbers,
+            target_weights,
+            start_asset_values,
+            total_portfolio_value,
+            target_buy_sell,
+            initTargetAssetIndex
+        ),
+    NON_ERROR_CHECKING_SINGLE_OPERATION_TRANSACTION(
+        index_numbers,
+        NEXT_ASSET_VALUES(
+            index_numbers,
+            start_asset_values,
+            initTargetAssetIndex,
+            initChange
+        ),
+        total_portfolio_value,
+        target_buy_sell,
+        GET_CHANGE_PACKET(
+            target_buy_sell,
+            precision
+        ),
+        initChange,
+        asset_selector
+    )
+)
+EOF
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+fn GET_WRAPPED_ASSET_SELECTOR
+(
+    index_numbers,
+    target_weights,
+    asset_selector
+)
+
+Notes:
+index_numbers is equal to SEQUENCE(COUNTA(target_weights)).
+The point of the function is that it makes it easier to run asset_selector,
+    and minimizes the number of arguments that need to be passed in.
+
+
+=LAMBDA(currAssetValues, currPortfolioValue,
+    asset_selector(index_numbers, target_weights, currAssetValues, currPortfolioValue)
+)
+EOF
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+fn _IMPL_SINGLE_OPERATION_TRANSACTION
+(
+    number_of_assets,
+    target_weights,
+    start_asset_values,
+    total_portfolio_value,
+    target_buy_sell,
+    precision
+)
+
+=LET(
+    indexNumbers,
+        SEQUENCE(number_of_assets),
+    START_NON_ERROR_CHECKING_SINGLE_OPERATION_TRANSACTION(
+        indexNumbers,
+        target_weights,
+        start_asset_values,
+        total_portfolio_value,
+        target_buy_sell,
+        precision,
+        IF(target_buy_sell < 0,
+            GET_WRAPPED_ASSET_SELECTOR(indexNumbers, target_weights, GET_MOST_OVERWEIGHT_INDEX),
+            GET_WRAPPED_ASSET_SELECTOR(indexNumbers, target_weights, GET_MOST_UNDERWEIGHT_INDEX)
+        )
+    )
+)
+EOF
+
+
+
+
+
+
+
+
+
+
+
+
+
+fn CAN_DO_FULL_SINGLE_OP_REBALANCE
+(
+    target_weights,
+    start_asset_values,
+    total_portfolio_value,
+    target_buy_sell
+)
+
+Notes:
+minOnlySellFULLRebalance will always be negative and minOnlyBuyFULLRebalance will always be positive
+unless the portfolio is perfectly balanced (in which case both values would be zero).
+
+
+=LET(
+    change,
+        CHANGE_IN_TOTAL_PORTFOLIO_VALUE_NEEDED_FOR_CURRENT_ASSET_VALUES_TO_BE_TARGET_WEIGHTS(target_weights, start_asset_values, total_portfolio_value),
+    minOnlyBuyFULLRebalance,
+        MAX(change),
+    minOnlySellFULLRebalance,
+        MIN(change),
+    IF(target_buy_sell > 0,
+        target_buy_sell >= minOnlyBuyFULLRebalance,
+        target_buy_sell <= minOnlySellFULLRebalance
+    )
+)
+EOF
+
+
+
+
+
+
+
+
+
+
+
+fn ALIGN_CHANGES_TO_ORIGINAL_POSITION
+(
+    subset_changes,
+    original_subset_element_index_positions,
+    subset_size,
+    superset_size
+)
+
+=LET(
+    helperIndexAndResultMix,
+        REDUCE({1}, SEQUENCE(superset_size),
+            LAMBDA(counter_result, i,
+                LET(
+                    k,
+                        INDEX(counter_result, 1),
+                    IF(k > subset_size,
+                        {k; 0; counter_result},
+                        LET(
+                            original_index,
+                                INDEX(original_subset_element_index_positions, k),
+                            IF(i = original_index,
+                                {k + 1; INDEX(subset_changes, k); counter_result},
+                                {k; 0; counter_result}
+                            )
+                        )
+                    )
+                )
+            )
+        ),
+    MAP(SEQUENCE(superset_size, 1, superset_size * 2, -2),
+        LAMBDA(i, INDEX(helperIndexAndResultMix, i))
+    )
+)
+
+EOF
+
+
+
+
+
+
+
+
+
+
+
+
+fn _IMPL_SELL_ZERO_WEIGHT_ASSETS
+(
+    index_numbers,
+    sorted_zero_weight_asset_values,
+    number_of_zero_weight_assets,
+    largest_group_with_same_value_size,
+    target_sell
+)
+
+Note:
+index_numbers is eq to SEQUENCE(number_of_zero_weight_assets).
+sorted_zero_weight_asset_values are in descending order.
+target_sell is a negative value.
+
+=IF(target_sell = 0,
+    sorted_zero_weight_asset_values,
+    IF(largest_group_with_same_value_size < number_of_zero_weight_assets,
+        LET(
+            largestGroupUniformValue,
+                INDEX(sorted_zero_weight_asset_values, 1),
+            nextGroupUniformValue,
+                INDEX(sorted_zero_weight_asset_values, largest_group_with_same_value_size + 1),
+            targetLargestGroupTotalChange,
+                -(largestGroupUniformValue - nextGroupUniformValue) * largest_group_with_same_value_size,
+            actualLargestGroupTotalChange,
+                MAX(target_sell, targetLargestGroupTotalChange),
+            changePacket,
+                actualLargestGroupTotalChange / largest_group_with_same_value_size,
+            _IMPL_SELL_ZERO_WEIGHT_ASSETS(
+                index_numbers,
+                MAP(sorted_zero_weight_asset_values, index_numbers,
+                    LAMBDA(val, i,
+                        val + IF(i > largest_group_with_same_value_size, 0, changePacket)
+                    )
+                ),
+                number_of_zero_weight_assets,
+                largest_group_with_same_value_size + (targetLargestGroupTotalChange = actualLargestGroupTotalChange),
+                target_sell - actualLargestGroupTotalChange
+            )
+        ),
+        LET(
+            changePacket,
+                target_sell / number_of_zero_weight_assets,
+            MAP(sorted_zero_weight_asset_values, LAMBDA(val, val + changePacket))
+        )
+    )
+)
+
+EOF
+
+
+
+
+
+
+
+
+
+
+
+fn SELL_ZERO_WEIGHT_ASSETS
+(
+    zero_weight_asset_values,
+    zero_weight_original_index_numbers,
+    number_of_zero_weight_assets,
+    target_sell
+)
+
+=IF(target_sell = 0,
+    zero_weight_asset_values,
+    IF(number_of_zero_weight_assets = 1,
+        zero_weight_asset_values - target_sell,
+        LET(
+            indexNumbers,
+                SEQUENCE(number_of_zero_weight_assets),
+            sortedAssetValuesDescendingWithIndexInfo,
+                SORT(
+                    {zero_weight_original_index_numbers, zero_weight_asset_values},
+                    2,
+                    FALSE
+                ),
+            sortedIndexPositionsBasedOnOriginalAssetValues,
+                MAP(indexNumbers,
+                    LAMBDA(i, INDEX(sortedAssetValuesDescendingWithIndexInfo, i, 1))
+                ),
+            sortedAssetValues,
+                MAP(indexNumbers,
+                    LAMBDA(i, INDEX(sortedAssetValuesDescendingWithIndexInfo, i, 2))
+                ),
+            unorderedSoldAssetsValues,
+                _IMPL_SELL_ZERO_WEIGHT_ASSETS(
+                    indexNumbers,
+                    sortedAssetValues,
+                    number_of_zero_weight_assets,
+                    REDUCE(0, indexNumbers,
+                        LAMBDA(sum, i, sum + (INDEX(sortedAssetValues, 1) = INDEX(sortedAssetValues, i)))
+                    ),
+                    target_sell
+                ),
+            postSellSortedIndex,
+                SORT(
+                    {sortedIndexPositionsBasedOnOriginalAssetValues, unorderedSoldAssetsValues},
+                    1,
+                    TRUE
+                ),
+            MAP(indexNumbers,
+                LAMBDA(i, INDEX(postSellSortedIndex, i, 2))
+            )
+        )
+    )
+)
+
+EOF
+
+
+
+
+
+
+
+
+
+
+
+
+
+fn ZERO_WEIGHT_SELL_HANDLER
+(
+    index_numbers_non_zero_weight,
+    number_of_non_zero_weight_assets,
+    index_numbers_zero_weight,
+    number_of_zero_weight_assets,
+    target_weights,
+    start_asset_values,
+    total_portfolio_value,
+    target_sell,
+    number_of_total_assets,
+    precision
+)
+
+Note:
+target_sell MUST be negative. (and therefore change packet will also be negative)
+
+the reason for newPrecision is to ensure the same changePacket
+    moving forward with SINGLE_OPERATION_TRANSACTION, and also to
+    not do more iterations than needed as described by the original precision.
+
+=LET(
+    assetValuesZeroWeight,
+        MAP(index_numbers_zero_weight, LAMBDA(i, INDEX(start_asset_values, i))),
+    sumOfZeroWeightAssetValues,
+        SUM(assetValuesZeroWeight),
+    canSellMoreThanJustAllTheZeroWeightAssets,
+        -target_sell > sumOfZeroWeightAssetValues,
+    canOnlySellSomeZeroWeightAssets,
+        -target_sell < sumOfZeroWeightAssetValues,
+
+    IF(-target_sell >= total_portfolio_value,
+        MAP(start_asset_values, LAMBDA(val, -val)),
+        IF(canSellMoreThanJustAllTheZeroWeightAssets,
+            LET(
+                newPrecision,
+                    LET(
+                        changePacket,
+                            GET_CHANGE_PACKET(target_sell, precision),
+                        initItersDoneByZeroWeightSales,
+                            -sumOfZeroWeightAssetValues / changePacket,
+                        GET_PRECISION_BASED_ON_ITER_COUNT(
+                            GET_ITER_COUNT_BASED_ON_PRECISION(precision) -
+                            initItersDoneByZeroWeightSales
+                        )
+                    ),
+                changesToZeroWeightAssetValues,
+                    MAP(assetValuesZeroWeight, LAMBDA(val, -val)),
+                changesToNonZeroAssetValues,
+                    SINGLE_OPERATION_TRANSACTION(
+                        MAP(index_numbers_non_zero_weight,
+                            LAMBDA(i, INDEX(target_weights, i))
+                        ),
+                        MAP(index_numbers_non_zero_weight,
+                            LAMBDA(i, INDEX(start_asset_values, i))
+                        ),
+                        total_portfolio_value - sumOfZeroWeightAssetValues,
+                        target_sell + sumOfZeroWeightAssetValues,
+                        number_of_non_zero_weight_assets,
+                        newPrecision
+                    ),
+                MAP(
+                    ALIGN_CHANGES_TO_ORIGINAL_POSITION(
+                        changesToZeroWeightAssetValues,
+                        index_numbers_zero_weight,
+                        number_of_zero_weight_assets,
+                        number_of_total_assets
+                    ),
+                    ALIGN_CHANGES_TO_ORIGINAL_POSITION(
+                        changesToNonZeroAssetValues,
+                        index_numbers_non_zero_weight,
+                        number_of_non_zero_weight_assets,
+                        number_of_total_assets
+                    ),
+                    LAMBDA(zeroChanges, nonZeroChanges, zeroChanges + nonZeroChanges)
+                )
+            ),
+            IF(canOnlySellSomeZeroWeightAssets,
+                LET(
+                    afterSalesZeroWeightAssetValues,
+                        SELL_ZERO_WEIGHT_ASSETS(
+                            assetValuesZeroWeight,
+                            index_numbers_zero_weight,
+                            number_of_zero_weight_assets,
+                            target_sell
+                        ),
+                    ALIGN_CHANGES_TO_ORIGINAL_POSITION(
+                        MAP(afterSalesZeroWeightAssetValues, assetValuesZeroWeight,
+                            LAMBDA(endVal, startVal, endVal - startVal)
+                        ),
+                        index_numbers_zero_weight,
+                        number_of_zero_weight_assets,
+                        number_of_total_assets
+                    )
+                ),
+                MAP(SEQUENCE(number_of_total_assets),
+                    LAMBDA(i,
+                        LET(
+                            weight,
+                                INDEX(target_weights, i),
+                            val,
+                                INDEX(start_asset_values, i),
+                            IF (weight = 0, -val, 0)
+                        )
+                    )
+                )
+            )
+        )
+    )
+)
+
+EOF
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+fn ZERO_WEIGHT_BUY_HANDLER
+(
+    index_numbers_non_zero_weight,
+    number_of_non_zero_weight_assets,
+    index_numbers_zero_weight,
+    number_of_zero_weight_assets,
+    target_weights,
+    start_asset_values,
+    total_portfolio_value,
+    target_buy,
+    number_of_total_assets,
+    precision
+)
+
+
+=LET(
+    assetValuesZeroWeight,
+        MAP(index_numbers_zero_weight, LAMBDA(i, INDEX(start_asset_values, i))),
+    sumOfZeroWeightAssetValues,
+        SUM(assetValuesZeroWeight),
+    unAlignedChanges,
+        SINGLE_OPERATION_TRANSACTION(
+            MAP(index_numbers_non_zero_weight,
+                LAMBDA(i, INDEX(target_weights, i))
+            ),
+            MAP(index_numbers_non_zero_weight,
+                LAMBDA(i, INDEX(start_asset_values, i))
+            ),
+            total_portfolio_value - sumOfZeroWeightAssetValues,
+            target_buy,
+            number_of_non_zero_weight_assets,
+            precision
+        ),
+    ALIGN_CHANGES_TO_ORIGINAL_POSITION
+    (
+        unAlignedChanges,
+        index_numbers_non_zero_weight,
+        number_of_non_zero_weight_assets,
+        number_of_total_assets
+    )
+)
+EOF
+
+
+
+
+
+
+
+
+
+
+
+
+fn ZERO_WEIGHT_HANDLER
+(
+    target_weights,
+    start_asset_values,
+    total_portfolio_value,
+    target_buy_sell,
+    number_of_total_assets,
+    precision
+)
+
+=LET(
+    indexNumbers,
+        SEQUENCE(number_of_total_assets),
+    indexNumbersNonZeroWeight,
+        FILTER(indexNumbers, target_weights <> 0),
+    numberOfNonZeroWeightAssets,
+        COUNTA(indexNumbersNonZeroWeight),
+    indexNumbersZeroWeight,
+        FILTER(indexNumbers, target_weights = 0),
+    numberOfZeroWeightAssets,
+        number_of_total_assets - numberOfNonZeroWeightAssets,
+    nextHandler,
+        IF(target_buy_sell < 0,
+            ZERO_WEIGHT_SELL_HANDLER,
+            ZERO_WEIGHT_BUY_HANDLER
+        ),
+    nextHandler(
+        indexNumbersNonZeroWeight,
+        numberOfNonZeroWeightAssets,
+        indexNumbersZeroWeight,
+        numberOfZeroWeightAssets,
+        target_weights,
+        start_asset_values,
+        total_portfolio_value,
+        target_buy_sell,
+        number_of_total_assets,
+        precision
+    )
+)
+
+EOF
+
+
+
+
+
+
+
+
+
+
+
+
+fn SINGLE_OPERATION_TRANSACTION
+(
+    target_weights,
+    start_asset_values,
+    total_portfolio_value,
+    target_buy_sell,
+    number_of_assets,
+    precision
+)
+
+Notes:
+Have to check for COUNTIF(target_weights, "=0") > 0 since when a target weight is zero
+stuff starts to get divided by zero and equations don't start to make sense no more.
+target weight = 0 is a very special edge case.
+
+precisionCeiling is used to keep user from hurting themselves. 99.99% would result in
+10,000 iterCount, which wouldn't work most times, but it should be a high enough ceiling.
+
+GET_PRECISION_BASED_ON_ITER_COUNT(ABS(number_of_assets) + 1), the + 1 is just to make sure
+that the function does not divide by zero, and the ABS insures the min value is zero.
+
+=LET(
+    precisionCeiling,
+        99.99%,
+    precisionFloor,
+        GET_PRECISION_BASED_ON_ITER_COUNT(ABS(number_of_assets) + 1),
+    actualPrecision,
+        MIN(MAX(precision, precisionFloor), precisionCeiling),
+    targetWeightsSumIs100Percent,
+        LET(
+            weightSum,
+                SUM(target_weights),
+            epsilon,
+                1e-6,
+            ABS(100% - weightSum) <= epsilon
+        ),
+    BLANK_VALUE,
+        IF(TRUE,,),
+    IF(OR(number_of_assets <= 0, NOT(targetWeightsSumIs100Percent)),
+        BLANK_VALUE,
+        IF(number_of_assets = 1,
+            target_buy_sell,
+            IF(COUNTIF(target_weights, "=0") > 0,
+                ZERO_WEIGHT_HANDLER(
+                    target_weights,
+                    start_asset_values,
+                    total_portfolio_value,
+                    target_buy_sell,
+                    number_of_assets,
+                    actualPrecisionIF(TRUE,,)
+                ),
+                IF(target_buy_sell = 0,
+                    SEQUENCE(number_of_assets, 1, 0, 0),
+                    IF(-target_buy_sell >= total_portfolio_value,
+                        MAP(start_asset_values, LAMBDA(val, -val)),
+                        IF(CAN_DO_FULL_SINGLE_OP_REBALANCE(target_weights, start_asset_values, total_portfolio_value, target_buy_sell),
+                            REBALANCE(target_weights, start_asset_values, total_portfolio_value + target_buy_sell),
+                            MAP(
+                                _IMPL_SINGLE_OPERATION_TRANSACTION(
+                                    number_of_assets,
+                                    target_weights,
+                                    start_asset_values,
+                                    total_portfolio_value,
+                                    target_buy_sell,
+                                    actualPrecision
+                                ),
+                                start_asset_values,
+                                LAMBDA(endVal, startVal, endVal - startVal)
+                            )
+                        )
+                    )
+                )
+            )
+        )
+    )
+)
+
+EOF
