@@ -932,7 +932,7 @@ that the function does not divide by zero, and the ABS insures the min value is 
                     total_portfolio_value,
                     target_buy_sell,
                     number_of_assets,
-                    actualPrecisionIF(TRUE,,)
+                    actualPrecision
                 ),
                 IF(target_buy_sell = 0,
                     SEQUENCE(number_of_assets, 1, 0, 0),
