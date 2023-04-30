@@ -593,7 +593,7 @@ fn SELL_ZERO_WEIGHT_ASSETS
 =IF(target_sell = 0,
     zero_weight_asset_values,
     IF(number_of_zero_weight_assets = 1,
-        zero_weight_asset_values - target_sell,
+        zero_weight_asset_values + target_sell,
         LET(
             indexNumbers,
                 SEQUENCE(number_of_zero_weight_assets),
